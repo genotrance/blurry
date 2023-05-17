@@ -10,8 +10,8 @@ import tkinter.ttk as ttk
 import screeninfo
 
 # Package imports
-import helper
-import version
+from . import helper
+from . import version
 
 # TK shortcuts
 ButtonPress = tk.EventType.ButtonPress
@@ -237,9 +237,13 @@ class Gui:
 
     def set_title(self):
         "Set title for window"
-        title = f'Blurry v{version.__version__} - "{self.blurry.dir}" - {len(self.blurry.allfiles)} images'
+        sep = " - "
+        title = sep.join([f"Blurry v{version.__version__}",
+                            f'"{self.blurry.dir}"',
+                            f"{len(self.blurry.allfiles)} images"])
         if not self.blurry.is_allfiles:
-            title += f", {len(self.blurry.files)} groups ({self.blurry.image.sim.simfilter})"
+            title = sep.join([title, f"{len(self.blurry.files)} groups",
+                                 f"({self.blurry.image.sim.simfilter})"])
         self.root.title(title)
 
     def show_window(self):

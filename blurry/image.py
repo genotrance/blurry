@@ -19,8 +19,8 @@ import numpy
 from PIL import Image, ImageDraw, ImageFilter, ExifTags, TiffImagePlugin
 
 # Package imports
-import helper
-import similar as sim
+from . import helper
+from . import similar as sim
 
 # Image resampling quality
 RESAMPLER = Image.Resampling.BILINEAR
@@ -76,8 +76,8 @@ class BlurryImage:
         self.mmap_cache = {}
         self.img_cache = {}
 
-        scriptdir = os.path.dirname(os.path.normpath(os.path.join(os.getcwd(), sys.argv[0])))
-        self.cachedb = os.path.join(scriptdir, "cache.db")
+        homedir = os.path.expanduser("~")
+        self.cachedb = os.path.join(homedir, ".blurry", "cache.db")
         if os.path.exists(self.cachedb):
             cache = {}
             try:
@@ -101,6 +101,7 @@ class BlurryImage:
                 pass
             cdata[self.dir] = self.img_cache
         else:
+            os.makedirs(os.path.dirname(self.cachedb), exist_ok=True)
             cdata = {self.dir: self.img_cache}
         with lzma.open(self.cachedb, "wt") as cdb:
             json.dump(cdata, cdb)

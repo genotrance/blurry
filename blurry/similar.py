@@ -5,7 +5,7 @@ import cv2
 import numpy
 
 # Package imports
-import helper
+from . import helper
 
 HASH = "hash"
 HISTOGRAM = "histogram"

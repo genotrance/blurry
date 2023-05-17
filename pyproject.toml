@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blurry"
+authors = [
+    {name = "Ganesh Viswanathan", email = "dev@genotrance.com"},
+]
+description = "Blurry is a photo culling tool"
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["photo", "image", "culling"]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "dlib-bin",
+    "numpy",
+    "opencv-python",
+    "pillow",
+    "screeninfo",
+]
+dynamic = ["version"]
+
+[project.gui-scripts]
+blurry = "blurry:startup"
+
+[tool.setuptools.packages.find]
+include = ["blurry*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "blurry.version.__version__"}

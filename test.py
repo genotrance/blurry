@@ -9,8 +9,8 @@ import tkinter as tk
 
 from PIL import Image
 
-import blurry
-import gui
+from blurry import main
+from blurry import gui
 
 NUMIMAGES = 20
 
@@ -79,8 +79,8 @@ class Tests(unittest.TestCase):
         self.root = tk.Tk()
         files = files or [self.dir]
         files.append("--debug")
-        blurry.PAGESIZE = self.pagesize
-        self.blurry = blurry.Blurry(files, root = self.root, is_allfiles = True, is_testing = True)
+        main.PAGESIZE = self.pagesize
+        self.blurry = main.Blurry(files, root = self.root, is_allfiles = True, is_testing = True)
 
     def tearDown(self):
         self.send("Quit")
@@ -93,12 +93,12 @@ class Tests(unittest.TestCase):
     def test_bksp(self):
         "End, BackSpace"
         # Backspace one by one
-        offsets = list(range(blurry.PAGESIZE))
+        offsets = list(range(main.PAGESIZE))
         # Go to the end of list
         self.send("End")
-        for i in range(blurry.PAGESIZE):
+        for i in range(main.PAGESIZE):
             # Number of images matches
-            self.assertEqual(len(self.blurry.offsets), blurry.PAGESIZE - i)
+            self.assertEqual(len(self.blurry.offsets), main.PAGESIZE - i)
             # Order of images matches what we expect
             self.assertEqual(offsets, self.blurry.offsets)
             # Cursor is on the last image
@@ -118,14 +118,14 @@ class Tests(unittest.TestCase):
         # Correct image is highlighted
         self.check_highlight()
         # First image should be the last image
-        self.assertEqual(self.blurry.offsets[0], blurry.PAGESIZE-1)
+        self.assertEqual(self.blurry.offsets[0], main.PAGESIZE-1)
 
     def test_ctrl_bksp(self):
         "Right, BackSpaceToHome"
-        moveby = blurry.PAGESIZE // 2
+        moveby = main.PAGESIZE // 2
 
         # Control-Backspace from the middle
-        offsets = list(range(blurry.PAGESIZE))
+        offsets = list(range(main.PAGESIZE))
         # Go to the 5th image
         for _ in range(moveby):
             self.send("Right")
@@ -138,7 +138,7 @@ class Tests(unittest.TestCase):
         # Remove from expected list
         offsets = offsets[moveby:]
         # Number of images matches
-        self.assertEqual(len(self.blurry.offsets), blurry.PAGESIZE - moveby)
+        self.assertEqual(len(self.blurry.offsets), main.PAGESIZE - moveby)
         # Order of images matches what we expect
         self.assertEqual(offsets, self.blurry.offsets)
         # Correct image is highlighted
@@ -150,20 +150,20 @@ class Tests(unittest.TestCase):
         self.send("BackSpaceToHome")
         self.send("BackSpaceToHome")
         # Left with 4 images
-        self.assertEqual(len(self.blurry.offsets), blurry.PAGESIZE-moveby)
+        self.assertEqual(len(self.blurry.offsets), main.PAGESIZE-moveby)
         # Cursor should be at the first image
         self.assertEqual(self.blurry.cursor, 0)
         # Correct image is highlighted
         self.check_highlight()
         # First image should be the 5th image
-        self.assertEqual(self.blurry.offsets[0], blurry.PAGESIZE-moveby)
+        self.assertEqual(self.blurry.offsets[0], main.PAGESIZE-moveby)
 
     def test_ctrl_del(self):
         "Right, DeleteToEnd"
-        moveby = blurry.PAGESIZE // 2
+        moveby = main.PAGESIZE // 2
 
         # Control-Delete from the middle
-        offsets = list(range(blurry.PAGESIZE))
+        offsets = list(range(main.PAGESIZE))
         # Go to the moveby'th image
         for _ in range(moveby):
             self.send("Right")
@@ -197,10 +197,10 @@ class Tests(unittest.TestCase):
     def test_del(self):
         "Delete"
         # Delete one by one
-        offsets = list(range(blurry.PAGESIZE))
-        for i in range(blurry.PAGESIZE):
+        offsets = list(range(main.PAGESIZE))
+        for i in range(main.PAGESIZE):
             # NUmber of images matches
-            self.assertEqual(len(self.blurry.offsets), blurry.PAGESIZE - i)
+            self.assertEqual(len(self.blurry.offsets), main.PAGESIZE - i)
             # Order of images matches what we expect
             self.assertEqual(offsets, self.blurry.offsets)
             # Cursor is on the first image
@@ -220,7 +220,7 @@ class Tests(unittest.TestCase):
         # Correct image is highlighted
         self.check_highlight()
         # It should be the last image
-        self.assertEqual(self.blurry.offsets[0], blurry.PAGESIZE-1)
+        self.assertEqual(self.blurry.offsets[0], main.PAGESIZE-1)
 
     def test_insert(self):
         "Single file load - InsertFromRight, Home, InsertFromLeft"
@@ -304,11 +304,11 @@ class Tests(unittest.TestCase):
         # Go to end
         self.send("End")
         # Cursor at the end
-        self.assertEqual(self.blurry.cursor, blurry.PAGESIZE-1)
+        self.assertEqual(self.blurry.cursor, main.PAGESIZE-1)
         # Correct image is highlighted
         self.check_highlight()
         # Move left few times
-        for _ in range(1, blurry.PAGESIZE // 2 + 1):
+        for _ in range(1, main.PAGESIZE // 2 + 1):
             # Move right
             self.send("Left")
             # Correct image is highlighted
@@ -321,7 +321,7 @@ class Tests(unittest.TestCase):
         # Correct image is highlighted
         self.check_highlight()
         # Move right few times
-        for _ in range(1, blurry.PAGESIZE // 2 + 1):
+        for _ in range(1, main.PAGESIZE // 2 + 1):
             # Move right
             self.send("Right")
             # Correct image is highlighted
@@ -339,9 +339,9 @@ class Tests(unittest.TestCase):
         # Down
         self.send("Down")
         # Cursor on next row
-        self.assertEqual(self.blurry.cursor, blurry.PAGESIZE // 2)
+        self.assertEqual(self.blurry.cursor, main.PAGESIZE // 2)
         # Offset test
-        self.assertEqual(self.blurry.offsets[self.blurry.cursor], blurry.PAGESIZE // 2)
+        self.assertEqual(self.blurry.offsets[self.blurry.cursor], main.PAGESIZE // 2)
         # Correct image is highlighted
         self.check_highlight()
 
@@ -390,8 +390,8 @@ class Tests(unittest.TestCase):
         self.send("PageDown")
         # Cursor at 0
         self.assertEqual(self.blurry.cursor, 0)
-        # Offset is blurry.PAGESIZE
-        self.assertEqual(self.blurry.offsets[self.blurry.cursor], blurry.PAGESIZE)
+        # Offset is main.PAGESIZE
+        self.assertEqual(self.blurry.offsets[self.blurry.cursor], main.PAGESIZE)
         # Correct image is highlighted
         self.check_highlight()
 
@@ -402,7 +402,7 @@ class Tests(unittest.TestCase):
         # Cursor at 0
         self.assertEqual(self.blurry.cursor, 0)
         # Offset is correct
-        self.assertEqual(self.blurry.offsets[self.blurry.cursor], NUMIMAGES - blurry.PAGESIZE)
+        self.assertEqual(self.blurry.offsets[self.blurry.cursor], NUMIMAGES - main.PAGESIZE)
         # Correct image is highlighted
         self.check_highlight()
 
@@ -411,7 +411,7 @@ class Tests(unittest.TestCase):
         # Cursor at 0
         self.assertEqual(self.blurry.cursor, 0)
         # Offset is correct
-        self.assertEqual(self.blurry.offsets[self.blurry.cursor], NUMIMAGES - (blurry.PAGESIZE * 2))
+        self.assertEqual(self.blurry.offsets[self.blurry.cursor], NUMIMAGES - (main.PAGESIZE * 2))
         # Correct image is highlighted
         self.check_highlight()
 
@@ -475,7 +475,7 @@ class Tests(unittest.TestCase):
         "Down, Up, Right, Left"
 
         # Shift by row
-        step = blurry.PAGESIZE // 2
+        step = main.PAGESIZE // 2
         count = step
         key = "Down"
         cursor = step
@@ -528,14 +528,14 @@ class Tests(unittest.TestCase):
                 key = "Left"
                 count -= 1
                 cursor -= 2
-            if cursor >= blurry.PAGESIZE:
-                cursor = blurry.PAGESIZE - 1
+            if cursor >= main.PAGESIZE:
+                cursor = main.PAGESIZE - 1
             if cursor < 0:
                 cursor = 0
 
     def test_repl_sort(self):
         "ReplaceFromRight, ReplaceFromLeft, Sort"
-        offsets = list(range(blurry.PAGESIZE))
+        offsets = list(range(main.PAGESIZE))
         # Initial state matches expected list
         self.assertEqual(self.blurry.offsets, offsets)
         self.send("ReplaceFromLeft")
@@ -580,11 +580,11 @@ class Tests(unittest.TestCase):
 
         # Go to end
         self.send("PageEnd")
-        offsets = list(range(NUMIMAGES - blurry.PAGESIZE, NUMIMAGES))
+        offsets = list(range(NUMIMAGES - main.PAGESIZE, NUMIMAGES))
         # Initial state matches expected list
         self.assertEqual(self.blurry.offsets, offsets)
         # Cursor at the end
-        self.assertEqual(self.blurry.cursor, blurry.PAGESIZE-1)
+        self.assertEqual(self.blurry.cursor, main.PAGESIZE-1)
         # Correct image is highlighted
         self.check_highlight()
 
@@ -592,7 +592,7 @@ class Tests(unittest.TestCase):
         # No images on the right so no change
         self.assertEqual(self.blurry.offsets, offsets)
         # Cursor still at end
-        self.assertEqual(self.blurry.cursor, blurry.PAGESIZE-1)
+        self.assertEqual(self.blurry.cursor, main.PAGESIZE-1)
         # Correct image is highlighted
         self.check_highlight()
 
@@ -601,7 +601,7 @@ class Tests(unittest.TestCase):
         # Last image is now previous of first in view
         self.assertEqual(self.blurry.offsets, offsets)
         # Cursor still where it was
-        self.assertEqual(self.blurry.cursor, blurry.PAGESIZE-1)
+        self.assertEqual(self.blurry.cursor, main.PAGESIZE-1)
         # Correct image is highlighted
         self.check_highlight()
 
