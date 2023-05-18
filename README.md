@@ -46,7 +46,40 @@ welcome and appreciated.
 - Group similar photos and compare them in a popup view
 - Face detection, highlighting and close ups in a popup view
 
-### Keymap defaults
+### Usage
+
+#### Installation
+
+Blurry is a Python app so it is super easy to install if you have Python already:
+
+	pip install git+https://github.com/genotrance/blurry
+
+Alternatively, the source code can be downloaded and installed locally:
+
+- `git clone https://github.com/genotrance/blurry`
+
+- Download and extract https://github.com/genotrance/blurry/archive/main.zip
+
+Blurry can then be installed along with its dependencies as follows:
+
+	python -m pip install .
+
+More methods to download and install Blurry will be added as needed.
+
+#### Running Blurry
+
+Once installed, Blurry can be run as follows:
+- Running `blurry` directly - from `$PYTHON\Scripts`
+- Running Python in the background: `pythonw -m blurry`
+- Running `python blurry.py` if in the source directory
+
+If no folder is specified in the command-line, Blurry will ask to choose a directory
+to process and display.
+
+Blurry can generate a detailed `debug.log` with the `--debug` flag. This can be useful
+to debug problems and should be attached to issues when reported.
+
+#### Keyboard shortcuts
 
 | Category     | Action             | Description                                       |
 | -------------| ------------------ | ------------------------------------------------- |
