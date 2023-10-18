@@ -30,6 +30,8 @@ BLURRED = "blurred"
 CONTRAST = "contrast"
 EXIF = "exif"
 FACE = "faces"
+HASH = "hash"
+SIZE = "size"
 TIME = "mtime"
 
 @helper.debugclass
@@ -80,9 +82,8 @@ class BlurryImage:
         self.mmap_cache = {}
         self.img_cache = {}
 
-        # Cache directory for blurry generated assets - $TEMP/blurry/hash(self.dir)
-        self.cachedir = os.path.join(tempfile.gettempdir(), "blurry",
-                                      hashlib.sha1(self.dir.encode()).hexdigest())
+        # Cache directory for blurry generated assets - $TEMP/blurry
+        self.cachedir = os.path.join(tempfile.gettempdir(), "blurry")
         if not os.path.exists(self.cachedir):
             os.makedirs(self.cachedir)
 
@@ -272,10 +273,20 @@ class BlurryImage:
         with open(filepath, "rb") as fobj:
             self.mmap_cache[file] = mmap.mmap(fobj.fileno(), length = 0, access = mmap.ACCESS_READ)
 
+        # File modification time
         mtime = os.path.getmtime(filepath)
-        if file not in self.img_cache or mtime > self.img_cache[file][TIME]:
-            # Not in cache or file has changed - init
+        if file not in self.img_cache or mtime != self.img_cache[file][TIME]:
+            # Not in cache or file has changed - reinit
             self.img_cache[file] = {TIME: mtime}
+
+        # File size
+        size = os.path.getsize(filepath)
+        if SIZE not in self.img_cache[file]:
+            # Size not in cache
+            self.img_cache[file][SIZE] = size
+        elif self.img_cache[file][SIZE] != size:
+            # File has changed - reinit
+            self.img_cache[file] = {TIME: mtime, SIZE: size}
 
     def read_images(self):
         "Read every image from disk and generate info"
@@ -352,12 +363,22 @@ class BlurryImage:
         return img_pil
 
     @helper.timeit
+    def get_file_hash(self, file):
+        "Generate file hash based on mtime, size and EXIF data"
+        key = "%d-%d-%s" % (self.img_cache[file][TIME], self.img_cache[file][SIZE], json.dumps(self.img_cache[file][EXIF], sort_keys=True))
+        return hashlib.sha1(key.encode()).hexdigest()
+
+    @helper.timeit
     def get_info(self, file, img_pil):
         "Get all image info - file, EXIF, blurriness, contrast, histogram, etc."
 
         # Get EXIF
         if EXIF not in self.img_cache[file]:
             self.img_cache[file][EXIF] = self.exif(img_pil)
+
+        # Generate unique hash
+        if HASH not in self.img_cache[file]:
+            self.img_cache[file][HASH] = self.get_file_hash(file)
 
         # Reorient if required
         img_pil = self.reorient(file, img_pil)
@@ -370,7 +391,7 @@ class BlurryImage:
         if FACE not in self.img_cache[file]:
             ops.append(self.faces)
 
-        simcache = os.path.join(self.cachedir, f"{file}_{sim.SIMDEFAULT}.npz")
+        simcache = os.path.join(self.cachedir, f"{self.img_cache[file][HASH]}_{sim.SIMDEFAULT}.npz")
         if self.is_sim_rescan:
             if os.path.exists(simcache):
                 # Load similarity metadata from temp cache

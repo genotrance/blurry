@@ -14,13 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Load only image types supported PIL - ignore other files
 - Support addition of files to directory processed earlier
 - Remove missing files from image cache on initial load
+- Propagate blur/unblur to parent and child windows
 
 ### Changed
 
 - Normalize user provided paths into absolute paths
 - Limit similarity comparisons to images taken within 2 minutes, reduced from 5 minutes
 - Store image cache in the source directory as blurry.db - no longer one monolithic file in the home directory
-- Cache similarity metadata $TEMP/blurry/hash(dir) - save time when rescanning an image directory
+- Cache similarity metadata $TEMP/blurry to save time when rescanning an image directory
 
 ### Fixed
 

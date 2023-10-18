@@ -778,6 +778,46 @@ class Blurry:
 
         self.gui.layout()
 
+        self.propagate_blur(selected, down=True)
+        self.propagate_blur(selected, down=False)
+
+    def propagate_blur(self, offsets, down=True):
+        "Propagate blur of selected offsets to all parent and child windows"
+        if down:
+            # Propagate blur down to all child windows
+            for popup in self.popups:
+                if self.dir != popup.dir:
+                    # Child popup not for same image directory
+                    continue
+
+                refresh = False
+                for offset in offsets:
+                    if offset in popup.cache[TK]:
+                        # Reset TK image cache for affected offsets
+                        del popup.cache[TK][offset]
+                        refresh = True
+                if refresh:
+                    # Redraw GUI if any images affected
+                    popup.gui.layout()
+
+                # Propagate blur further down
+                popup.propagate_blur(offsets, down)
+        else:
+            if self.parent is not None and self.dir == self.parent.dir:
+                # Parent is not for same image directory
+                refresh = False
+                for offset in offsets:
+                    if offset in self.parent.cache[TK]:
+                        # Reset TK image cache for affected offsets
+                        del self.parent.cache[TK][offset]
+                        refresh = True
+                if refresh:
+                    # Redraw GUI if any images affected
+                    self.parent.gui.layout()
+
+                # Propagate blur further up
+                self.parent.propagate_blur(offsets, down=False)
+
     def do_zoomkey(self, event):
         """
         Zoom in/out of image or reset zoom using keyboard

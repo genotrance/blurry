@@ -7,7 +7,7 @@ import numpy
 # Package imports
 from . import helper
 
-HASH = "hash"
+PHASH = "phash"
 HISTOGRAM = "histogram"
 ORB = "orb"
 SIFT = "sift"
@@ -23,21 +23,21 @@ DIFFORB = 96
 DIFFSIFT = 98
 
 SIMFILTER = {
-    HASH: DIFFHASH,
+    PHASH: DIFFHASH,
     HISTOGRAM: DIFFHIST,
     ORB: DIFFORB,
     SIFT: DIFFSIFT
 }
 
 SIMDELTA = {
-    HASH: 1,
+    PHASH: 1,
     HISTOGRAM: 0.1,
     ORB: 1,
     SIFT: 1
 }
 
 SIMMAX = {
-    HASH: 25,
+    PHASH: 25,
     HISTOGRAM: 1.2,
     ORB: 99,
     SIFT: 99
@@ -56,7 +56,7 @@ class Similar:
 
         # Different methods to detect similarity
         self.simop = {
-            HASH: self.phash,
+            PHASH: self.phash,
             HISTOGRAM: self.histogram,
             ORB: self.orb,
             SIFT: self.sift
@@ -64,7 +64,7 @@ class Similar:
 
         # Comparing similarity between images
         self.simcompare = {
-            HASH: lambda x, y: numpy.count_nonzero(x != y),
+            PHASH: lambda x, y: numpy.count_nonzero(x != y),
             HISTOGRAM: lambda x, y: cv2.compareHist(x, y, cv2.HISTCMP_CHISQR),
             ORB: self.compare_knn,
             SIFT: self.compare_knn

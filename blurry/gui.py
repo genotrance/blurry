@@ -117,7 +117,6 @@ class Gui:
     "Class to handle all GUI functionality"
     blurry = None
     root = None
-    popups = None
     progress = None
     labels = None
     after = None
