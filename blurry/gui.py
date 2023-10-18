@@ -475,8 +475,10 @@ class Gui:
         # Number of splits
         num = len(self.blurry.offsets)
 
+        if num < 1:
+            raise ValueError("Too few images")
         # 1 row - 1x1, 1x2, 1x3
-        if num <= 3:
+        elif num <= 3:
             self.blurry.rows, self.blurry.cols = 1, num
         # 2 rows - 2x2, 2x3, 2x4
         elif num <= 8:

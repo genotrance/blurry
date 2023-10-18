@@ -1075,7 +1075,7 @@ class Blurry:
         # Load images in parallel
         if len(new_offsets) > 0:
             helper.parallelize((self.load_image, new_offsets),
-                               post=ImageTk.PhotoImage, results=self.cache[TK])
+                               post=self.make_imagetk, results=self.cache[TK])
 
         # Remove older images from cache
         keys = list(self.cache[TK].keys())
@@ -1105,7 +1105,13 @@ class Blurry:
         # Load new images in parallel
         if len(new_offsets) > 0:
             helper.parallelize((self.load_image, new_offsets),
-                               post=ImageTk.PhotoImage, results=self.cache[TK])
+                               post=self.make_imagetk, results=self.cache[TK])
+
+    def make_imagetk(self, img_pil):
+        "Convert PIL image to ImageTk"
+        img_tk = ImageTk.PhotoImage(img_pil)
+        img_pil.close()
+        return img_tk
 
     def get_imagetk(self, offset):
         "Get ImageTK for offset from cache"

@@ -25,4 +25,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Call img_pil.close() after img_tk is created to avoid future hang in PIL.Image.open()
 - Ignore errors when removing temporary directories
