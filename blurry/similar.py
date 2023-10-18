@@ -16,7 +16,7 @@ SIMILAR = "similar"
 
 SIMDEFAULT = ORB
 
-DIFFMINUTES = 5
+DIFFMINUTES = 2
 DIFFHASH = 20
 DIFFHIST = 1
 DIFFORB = 96
@@ -122,12 +122,8 @@ class Similar:
     def find_similar(self):
         "Compare all images to find similar images"
         for file in self.image.files:
-            # No similarity metadata to compare with
-            if SIMDEFAULT not in self.image.img_cache[file]:
-                return
-
-            self.image.img_cache[file][SIMILAR] = {}
-
+            if SIMILAR not in self.image.img_cache[file]:
+                self.image.img_cache[file][SIMILAR] = {}
         # Compare every file with files after it in parallel
         helper.parallelize((self.compare_similar, self.image.files),
                            final=self.image.blurry.gui.update_progress)

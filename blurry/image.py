@@ -3,12 +3,12 @@
 # Standard library imports
 import datetime
 import functools
+import hashlib
 import json
 import lzma
 import mmap
 import os.path
 import shutil
-import sys
 import tempfile
 
 # 3rd party imports
@@ -26,6 +26,7 @@ from . import similar as sim
 RESAMPLER = Image.Resampling.BILINEAR
 
 BLUR = "blur"
+BLURRED = "blurred"
 CONTRAST = "contrast"
 EXIF = "exif"
 FACE = "faces"
@@ -34,7 +35,8 @@ TIME = "mtime"
 @helper.debugclass
 class BlurryImage:
     "Main class to handle all image processing"
-    cachedb = None
+    blurrydb = None
+    cachedir = None
     img_cache = None
     mmap_cache = None
 
@@ -45,6 +47,8 @@ class BlurryImage:
 
     tempdirs = None
     is_temp = False
+
+    is_sim_rescan = False
 
     def __init__(self, blurry, directory, files):
         self.blurry = blurry
@@ -67,7 +71,7 @@ class BlurryImage:
 
         for directory in self.tempdirs.values():
             # Delete any temp directories
-            shutil.rmtree(directory)
+            shutil.rmtree(directory, ignore_errors=True)
 
     # Image info caching
 
@@ -76,35 +80,42 @@ class BlurryImage:
         self.mmap_cache = {}
         self.img_cache = {}
 
-        homedir = os.path.expanduser("~")
-        self.cachedb = os.path.join(homedir, ".blurry", "cache.db")
-        if os.path.exists(self.cachedb):
-            cache = {}
+        # Cache directory for blurry generated assets - $TEMP/blurry/hash(self.dir)
+        self.cachedir = os.path.join(tempfile.gettempdir(), "blurry",
+                                      hashlib.sha1(self.dir.encode()).hexdigest())
+        if not os.path.exists(self.cachedir):
+            os.makedirs(self.cachedir)
+
+        self.blurrydb = os.path.join(self.dir, "blurry.db")
+        if os.path.exists(self.blurrydb):
             try:
-                with lzma.open(self.cachedb, "r") as cdb:
-                    cache = json.load(cdb)
+                with lzma.open(self.blurrydb, "r") as cdb:
+                    self.img_cache = json.load(cdb)
             except json.decoder.JSONDecodeError:
                 pass
-            if self.dir in cache:
-                # Load only this directory from cache
-                self.img_cache = cache[self.dir]
+
+            # Remove any non-existent files from cache
+            self.clean_cache()
 
     def save_cache(self):
         "Save directory cache in memory to disk"
         self.img_cache[TIME] = os.path.getmtime(self.dir)
-        if os.path.exists(self.cachedb):
-            cdata = {}
-            try:
-                with lzma.open(self.cachedb, "r") as cdb:
-                    cdata = json.load(cdb)
-            except json.decoder.JSONDecodeError:
-                pass
-            cdata[self.dir] = self.img_cache
-        else:
-            os.makedirs(os.path.dirname(self.cachedb), exist_ok=True)
-            cdata = {self.dir: self.img_cache}
-        with lzma.open(self.cachedb, "wt") as cdb:
-            json.dump(cdata, cdb)
+        with lzma.open(self.blurrydb, "wt") as cdb:
+            json.dump(self.img_cache, cdb)
+
+    def clean_cache(self):
+        "Remove any non-existent files from cache"
+        for file in list(self.img_cache.keys()):
+            if file == TIME:
+                continue
+            if not os.path.exists(os.path.join(self.dir, file)):
+                # Remove file from similar files
+                for file1 in self.img_cache[file][sim.SIMILAR]:
+                    if file in self.img_cache[file1][sim.SIMILAR]:
+                        del self.img_cache[file1][sim.SIMILAR][file]
+
+                # Remove file from image cache
+                del self.img_cache[file]
 
     def clear_cache(self):
         "Clear specified fields from cache"
@@ -238,6 +249,14 @@ class BlurryImage:
 
     # Internal
 
+    def check_sim_rescan(self):
+        "Check if similarity rescan is required - new files added or similarity missing in cache"
+        self.is_sim_rescan = False
+        for file in self.files:
+            if file not in self.img_cache or sim.SIMILAR not in self.img_cache[file]:
+                self.is_sim_rescan = True
+                break
+
     @helper.timeit
     def read_file(self, file):
         "Load image file from disk"
@@ -275,11 +294,16 @@ class BlurryImage:
             # Some cache elements cleared
             # Directory changed - files added/removed/renamed
 
+            # Initialize progress bar - get info + find similar
             self.blurry.gui.setup_progress(len(self.files) * 2)
 
-            # Generate all info
+            # Check if rescan of files is required
+            self.check_sim_rescan()
+
+            # Load all files to get info
             helper.parallelize((self.read_image, self.files),
                                final=self.blurry.gui.update_progress)
+            self.is_sim_rescan = False
 
             # Find similar
             self.sim.find_similar()
@@ -298,7 +322,7 @@ class BlurryImage:
     # API
 
     @helper.timeit
-    def read_image(self, file, is_blurred = False):
+    def read_image(self, file):
         "Read image from disk and get info"
 
         # Load image file if not already
@@ -322,7 +346,7 @@ class BlurryImage:
             img_pil = self.blackwhite(img_pil)
 
         # Blur image if needed
-        if is_blurred:
+        if BLURRED in self.img_cache[file]:
             img_pil = self.blurimage(img_pil)
 
         return img_pil
@@ -345,8 +369,15 @@ class BlurryImage:
             ops.append(self.contrast)
         if FACE not in self.img_cache[file]:
             ops.append(self.faces)
-        if sim.SIMILAR not in self.img_cache[file]:
-            ops.append(self.sim.simop)
+
+        simcache = os.path.join(self.cachedir, f"{file}_{sim.SIMDEFAULT}.npz")
+        if self.is_sim_rescan:
+            if os.path.exists(simcache):
+                # Load similarity metadata from temp cache
+                self.img_cache[file][sim.SIMDEFAULT] = numpy.load(simcache)["arr_0"]
+            else:
+                # Regenerate similarity metadata
+                ops.append(self.sim.simop)
 
         if not self.is_temp and len(ops) != 0:
             # Convert into opencv format
@@ -372,11 +403,21 @@ class BlurryImage:
             if FACE not in self.img_cache[file]:
                 self.img_cache[file][FACE] = results[self.faces]
 
-            # Get metadata to find similar images
-            if sim.SIMILAR not in self.img_cache[file]:
+            # Get similarity metadata
+            if self.sim.simop in results:
+                # Load into image cache
                 self.img_cache[file][sim.SIMDEFAULT] = results[self.sim.simop]
+                # Save similarity metadata to temp cache
+                numpy.savez_compressed(simcache, self.img_cache[file][sim.SIMDEFAULT])
 
         return img_pil
+
+    def blur_image(self, file):
+        "Mark image as blurred or unblurred"
+        if BLURRED in self.img_cache[file]:
+            del self.img_cache[file][BLURRED]
+        else:
+            self.img_cache[file][BLURRED] = True
 
     def compare_ratings(self, files):
         "Get relative comparison of blurriness and contrast for specified images"
@@ -426,6 +467,10 @@ class BlurryImage:
     def get_similar(self, file):
         "Return all images similar to the specified file"
         return self.sim.get_similar(file)
+
+def get_supported_exts():
+    "Get supported image formats from PIL"
+    return [ext for ext, fmt in Image.registered_extensions().items() if fmt in Image.OPEN]
 
 def cast(value):
     "Cast EXIF data types to JSON supported types"

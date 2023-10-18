@@ -54,7 +54,6 @@ class Blurry:
     cursorp = None
     offsets = None
     selected = None
-    blurred = None
 
     # Show all the files or group similar as specified
     is_allfiles = False
@@ -113,7 +112,6 @@ class Blurry:
         }
         self.offsets = []
         self.selected = []
-        self.blurred = []
         self.popups = []
         # Init previous cursor positions - deque
         self.cursorp = collections.deque(maxlen = PAGESIZE)
@@ -154,9 +152,9 @@ class Blurry:
                 sys.exit()
 
         if os.path.isdir(filepaths[0]):
-            self.dir = filepaths[0]
+            self.dir = os.path.abspath(filepaths[0])
         elif os.path.isfile(filepaths[0]):
-            self.dir = os.path.dirname(filepaths[0])
+            self.dir = os.path.abspath(os.path.dirname(filepaths[0]))
         else:
             # Bad filepath, ask user to choose again
             self.gui.show_error(title="Error", message=f"Invalid filepath: {filepaths[0]}")
@@ -170,9 +168,11 @@ class Blurry:
         else:
             # Find all files in directory
             self.allfiles = []
-            for val in os.listdir(self.dir):
-                if os.path.isfile(os.path.join(self.dir, val)):
-                    self.allfiles.append(val)
+            exts = image.get_supported_exts()
+            for file in os.listdir(self.dir):
+                if os.path.isfile(os.path.join(self.dir, file)):
+                    if os.path.splitext(file)[1].lower() in exts:
+                        self.allfiles.append(file)
 
         if os.path.isfile(filepaths[0]):
             for filepath in filepaths:
@@ -743,6 +743,10 @@ class Blurry:
 
     def do_quit(self, _):
         "Close the app"
+        if self.parent is None:
+            # Save cache on exit
+            self.image.save_cache()
+
         self.gui.quit()
 
     def do_reload(self, _):
@@ -765,10 +769,8 @@ class Blurry:
         "Blur/unblur selected images"
         selected = self.selected + [self.offsets[self.cursor]]
         for offset in selected:
-            if offset not in self.blurred:
-                self.blurred.append(offset)
-            else:
-                self.blurred.remove(offset)
+            file = self.files[offset]
+            self.image.blur_image(file)
 
             # Reset TK image cache for affected offsets
             if offset in self.cache[TK]:
@@ -1005,7 +1007,7 @@ class Blurry:
         "Load image scaled to fit to screen"
 
         # Load image for this offset
-        img_pil = self.image.read_image(self.files[offset], is_blurred=offset in self.blurred)
+        img_pil = self.image.read_image(self.files[offset])
 
         # Scale to fit screen
         return self.scale_image(img_pil, offset)
