@@ -23,10 +23,11 @@ from . import helper
 from . import similar as sim
 
 # Image resampling quality
-RESAMPLER = Image.Resampling.BILINEAR
+RESAMPLER = Image.Resampling.LANCZOS
 
 BLUR = "blur"
 BLURRED = "blurred"
+BRIGHTNESS = "brightness"
 CONTRAST = "contrast"
 EXIF = "exif"
 FACE = "faces"
@@ -103,6 +104,7 @@ class BlurryImage:
         self.img_cache[TIME] = os.path.getmtime(self.dir)
         with lzma.open(self.blurrydb, "wt") as cdb:
             json.dump(self.img_cache, cdb)
+        del self.img_cache[TIME]
 
     def clean_cache(self):
         "Remove any non-existent files from cache"
@@ -132,7 +134,7 @@ class BlurryImage:
             if flag == "all":
                 self.img_cache = {}
                 cleared = True
-            elif flag in [BLUR, CONTRAST, EXIF, FACE, sim.SIMILAR]:
+            elif flag in [BLUR, BRIGHTNESS, CONTRAST, EXIF, FACE, sim.SIMILAR]:
                 cleared = True
                 for file in self.img_cache:
                     if flag in self.img_cache[file]:
@@ -172,6 +174,11 @@ class BlurryImage:
         return numpy.mean(magnitude_spectrum)
 
     @helper.timeit
+    def brightness(self, gray):
+        "Return the RMS to gauge brightness"
+        return numpy.sqrt(numpy.mean(gray ** 2))
+
+    @helper.timeit
     def contrast(self, gray):
         "Return contrast (standard deviation) of image"
         return numpy.std(gray)
@@ -204,7 +211,8 @@ class BlurryImage:
             if key.startswith("DateTime"):
                 return datetime.datetime.strptime(val, "%Y:%m:%d %H:%M:%S").timestamp()
 
-        return 0
+        # Fallback on file creation date if no EXIF data
+        return os.path.getctime(os.path.join(self.dir, file))
 
     def reorient(self, file, img_pil):
         "Get EXIF orientation info and transpose image if needed"
@@ -288,6 +296,7 @@ class BlurryImage:
             # File has changed - reinit
             self.img_cache[file] = {TIME: mtime, SIZE: size}
 
+    @helper.timeit
     def read_images(self):
         "Read every image from disk and generate info"
 
@@ -301,15 +310,16 @@ class BlurryImage:
         if self.is_temp:
             return
 
-        if self.clear_cache() or dtime < os.path.getmtime(self.dir):
+        # Check if rescan of files is required
+        self.check_sim_rescan()
+
+        if self.clear_cache() or dtime < os.path.getmtime(self.dir) or self.is_sim_rescan:
             # Some cache elements cleared
             # Directory changed - files added/removed/renamed
+            # Similarity rescan required
 
             # Initialize progress bar - get info + find similar
             self.blurry.gui.setup_progress(len(self.files) * 2)
-
-            # Check if rescan of files is required
-            self.check_sim_rescan()
 
             # Load all files to get info
             helper.parallelize((self.read_image, self.files),
@@ -317,6 +327,7 @@ class BlurryImage:
             self.is_sim_rescan = False
 
             # Find similar
+            self.save_cache()
             self.sim.find_similar()
 
             # Save cache
@@ -370,7 +381,7 @@ class BlurryImage:
 
     @helper.timeit
     def get_info(self, file, img_pil):
-        "Get all image info - file, EXIF, blurriness, contrast, histogram, etc."
+        "Get all image info - file, EXIF, blurriness, brightness, contrast, histogram, etc."
 
         # Get EXIF
         if EXIF not in self.img_cache[file]:
@@ -386,16 +397,18 @@ class BlurryImage:
         ops = []
         if BLUR not in self.img_cache[file]:
             ops.extend([self.sobel, self.laplacian, self.mean_spectrum])
+        if BRIGHTNESS not in self.img_cache[file]:
+            ops.append(self.brightness)
         if CONTRAST not in self.img_cache[file]:
             ops.append(self.contrast)
         if FACE not in self.img_cache[file]:
             ops.append(self.faces)
 
-        simcache = os.path.join(self.cachedir, f"{self.img_cache[file][HASH]}_{sim.SIMDEFAULT}.npz")
         if self.is_sim_rescan:
+            simcache = os.path.join(self.cachedir, f"{self.img_cache[file][HASH]}_{sim.SIMDEFAULT}.npz")
             if os.path.exists(simcache):
                 # Load similarity metadata from temp cache
-                self.img_cache[file][sim.SIMDEFAULT] = numpy.load(simcache)["arr_0"]
+                self.sim.sim_cache[file] = numpy.load(simcache, allow_pickle=True)["arr_0"]
             else:
                 # Regenerate similarity metadata
                 ops.append(self.sim.simop)
@@ -416,6 +429,10 @@ class BlurryImage:
                 mean_spectrum = results[self.mean_spectrum]
                 self.img_cache[file][BLUR] = round(sobel * laplacian * mean_spectrum / 1000, 2)
 
+            # Get brightness
+            if BRIGHTNESS not in self.img_cache[file]:
+                self.img_cache[file][BRIGHTNESS] = round(results[self.brightness], 2)
+
             # Get contrast
             if CONTRAST not in self.img_cache[file]:
                 self.img_cache[file][CONTRAST] = round(results[self.contrast], 2)
@@ -427,9 +444,9 @@ class BlurryImage:
             # Get similarity metadata
             if self.sim.simop in results:
                 # Load into image cache
-                self.img_cache[file][sim.SIMDEFAULT] = results[self.sim.simop]
+                self.sim.sim_cache[file] = results[self.sim.simop]
                 # Save similarity metadata to temp cache
-                numpy.savez_compressed(simcache, self.img_cache[file][sim.SIMDEFAULT])
+                numpy.savez_compressed(simcache, self.sim.sim_cache[file])
 
         return img_pil
 
@@ -441,28 +458,26 @@ class BlurryImage:
             self.img_cache[file][BLURRED] = True
 
     def compare_ratings(self, files):
-        "Get relative comparison of blurriness and contrast for specified images"
+        "Get relative comparison of blurriness, brightness and contrast for specified images"
         sharpness = {}
+        brightness = {}
         contrast = {}
         for file in files:
             if BLUR in self.img_cache[file]:
                 sharpness[file] = self.img_cache[file][BLUR]
+            if BRIGHTNESS in self.img_cache[file]:
+                brightness[file] = self.img_cache[file][BRIGHTNESS]
             if CONTRAST in self.img_cache[file]:
                 contrast[file] = self.img_cache[file][CONTRAST]
 
-        if len(sharpness) != 0:
-            # Sharpness %
-            maxvalue = max(sharpness.values())
-            for key, value in sharpness.items():
-                sharpness[key] = (value / maxvalue) * 100 if maxvalue != 0 else 0
+        # Scale values from 0-100 relative to maximum value
+        for value in [sharpness, brightness, contrast]:
+            if len(value) != 0:
+                maxvalue = max(value.values())
+                for key, val in value.items():
+                    value[key] = (val / maxvalue) * 100 if maxvalue != 0 else 0
 
-        if len(contrast) != 0:
-            # Contrast %
-            maxvalue = max(contrast.values())
-            for key, value in contrast.items():
-                contrast[key] = (value / maxvalue) * 100 if maxvalue != 0 else 0
-
-        return sharpness, contrast
+        return sharpness, brightness, contrast
 
     def get_faces(self, file):
         "Return all faces in the image if any"

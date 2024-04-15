@@ -313,7 +313,7 @@ class Gui:
 
         # Get relative ratings of images in view
         files = [self.blurry.files[offset] for offset in self.blurry.offsets]
-        sharpness, contrast = self.blurry.image.compare_ratings(files)
+        sharpness, brightness, contrast = self.blurry.image.compare_ratings(files)
 
         # Load previous/next page in background
         self.after.append(self.root.after(500, self.blurry.load_prevnext))
@@ -331,19 +331,22 @@ class Gui:
 
             # Add ratings text
             file = self.blurry.files[offset]
-            text = f"{file}"
+            text = ""
             if file in sharpness:
-                text += f"\nSharpness: {int(sharpness[file])}%"
+                text += f"{int(sharpness[file])}#\n"
+            if file in brightness:
+                text += f"{int(brightness[file])}b\n"
             if file in contrast:
-                text += f"\nContrast: {int(contrast[file])}%"
-            numsim = len(self.blurry.image.get_similar(file))
-            if numsim > 0:
-                text += f"\nSimilar: {numsim}"
+                text += f"{int(contrast[file])}c\n"
             numfaces = len(self.blurry.image.get_faces(file))
             if numfaces > 0:
-                text += f"\nFaces: {numfaces}"
-            textlabel = tk.Label(self.root, text=text)
-            textlabel.grid(row=row, column=col, sticky="nw", pady=2)
+                text += f"{numfaces}f\n"
+            numsim = len(self.blurry.image.get_similar(file))
+            if numsim > 0:
+                text += f"{numsim}s\n"
+            if len(text) != 0:
+                textlabel = tk.Label(self.root, text=text.rstrip(), font=("Fixedsys", 10), bg="black", fg="white")
+                textlabel.grid(row=row, column=col, sticky="nw", pady=2)
 
             # Label <=> offset tracking
             label.offset = offset

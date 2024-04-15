@@ -47,12 +47,16 @@ SIMMAX = {
 class Similar:
     "Class to handle all image similarity operations"
     image = None
+    sim_cache = None
     simop = None
     simcompare = None
     simfilter = None
 
     def __init__(self, image):
         self.image = image
+
+        # Cache of similar metadata
+        self.sim_cache = {}
 
         # Different methods to detect similarity
         self.simop = {
@@ -134,9 +138,8 @@ class Similar:
                 self.image.img_cache[file][SIMILAR] = dict(
                     sorted(self.image.img_cache[file][SIMILAR].items(), key=lambda x: x[1]))
 
-            # Remove similarity metadata - takes too much space
-            if SIMDEFAULT in self.image.img_cache[file]:
-                del self.image.img_cache[file][SIMDEFAULT]
+        # Remove similarity metadata
+        self.sim_cache = {}
 
     @helper.timeit
     def compare_similar(self, file1):
@@ -174,15 +177,19 @@ class Similar:
         "Compare file1 and file2 based on similarity algorithm selected"
         if (file1 == file2 or file2 in self.image.img_cache[file1][SIMILAR] or
             self.image.diff_dates(file1, file2) > 60 * DIFFMINUTES):
-            # Same file / already compared / more than 5 minutes apart
+            # Same file / already compared / more than DIFFMINUTES apart
             return
         if file1 in self.image.img_cache.get(file2, {}).get(SIMILAR, {}):
             # Already compared before, reuse
             return self.image.img_cache[file2][SIMILAR][file1]
         else:
             # Compare and return results
-            return self.simcompare(
-                self.image.img_cache[file1][SIMDEFAULT], self.image.img_cache[file2][SIMDEFAULT])
+            try:
+                return self.simcompare(
+                    self.sim_cache[file1], self.sim_cache[file2])
+            except cv2.error as exc:
+                print(f"Error comparing {file1} and {file2}: {exc}")
+                return
 
     def get_similar(self, file, visited=None):
         "Return all images similar to the specified file - recursively"

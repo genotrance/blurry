@@ -1077,15 +1077,8 @@ class Blurry:
             helper.parallelize((self.load_image, new_offsets),
                                post=self.make_imagetk, results=self.cache[TK])
 
-        # Remove older images from cache
-        keys = list(self.cache[TK].keys())
-        count = len(keys) - len(self.offsets) * PAGECACHE
-        while count > 0:
-            key = keys.pop(0)
-            while key in self.offsets:
-                key = keys.pop(0)
-            del self.cache[TK][key]
-            count -= 1
+        # Remove old images from cache
+        self.remove_old()
 
         # Delete after
         self.gui.after.pop(0)
@@ -1106,6 +1099,18 @@ class Blurry:
         if len(new_offsets) > 0:
             helper.parallelize((self.load_image, new_offsets),
                                post=self.make_imagetk, results=self.cache[TK])
+
+    def remove_old(self):
+        "Remove older images from cache"
+        keys = list(self.cache[TK].keys())
+        count = len(keys) - len(self.offsets) * PAGECACHE
+        while count > 0:
+            key = keys.pop(0)
+            while key in self.offsets:
+                # Skip images currently being displayed
+                key = keys.pop(0)
+            del self.cache[TK][key]
+            count -= 1
 
     def make_imagetk(self, img_pil):
         "Convert PIL image to ImageTk"
