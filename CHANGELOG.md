@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean up GUI display of image characteristics
 - Save cache after loading image characteristics but before comparing for similarties
 - Move similarity metadata from image cache to separate similarity cache since it is not saved to disk
+- Improved layout to not redraw the entire window when updating images
+- Set maximum parallel workers to number of CPU cores
 
 ### Fixed
 
@@ -33,3 +35,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ignore errors when removing temporary directories
 - Use image file creation date if EXIF date is missing
 - Rescan images if similarity info is missing
+- Fixed fullscreen on MacOS

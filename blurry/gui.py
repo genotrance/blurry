@@ -119,6 +119,7 @@ class Gui:
     root = None
     progress = None
     labels = None
+    textlabels = None
     after = None
 
     def __init__(self, blurry, root=None):
@@ -139,7 +140,8 @@ class Gui:
         self.root.withdraw()
 
         # Cache for labels
-        self.labels = {}
+        self.labels = []
+        self.textlabels = []
         self.after = []
 
     def start(self):
@@ -259,7 +261,8 @@ class Gui:
             if mon.is_primary is is_primary or len(monitors) == 1:
                 # If multi-monitor: put a primary window on primary monitor, sec on sec
                 # If only one monitor, leave window there
-                geom = f"+{mon.x}+{mon.y}"
+                w, h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+                geom = f"{w}x{h}+{mon.x}+{mon.y}"
                 self.root.geometry(geom)
                 break
 
@@ -296,14 +299,18 @@ class Gui:
         "Show error message popup"
         tkmb.showerror(title, message, parent=self.root)
 
+    @helper.timeit
     def layout(self):
         "Draw the screen of images based on current selection and state"
 
-        # Split screen based on number of images
-        self.split_screen()
+        is_layout_change = len(self.labels) != len(self.blurry.offsets)
 
-        # Clear any existing layout
-        self.clear_grid()
+        if is_layout_change:
+            # Split screen based on number of images
+            self.split_screen()
+
+            # Clear any existing layout
+            self.clear_grid()
 
         row = 0
         col = 0
@@ -316,18 +323,29 @@ class Gui:
         sharpness, brightness, contrast = self.blurry.image.compare_ratings(files)
 
         # Load previous/next page in background
-        self.after.append(self.root.after(500, self.blurry.load_prevnext))
+        self.after.append(self.root.after_idle(self.blurry.load_prevnext))
 
         # Layout on GUI
-        for offset in self.blurry.offsets:
-            # Create a label to display the image
-            label = MyLabel(self.root, image=self.blurry.get_imagetk(offset))
+        for i, offset in enumerate(self.blurry.offsets):
+            if len(self.labels) <= i:
+                # Create a label to display the image
+                label = MyLabel(self.root, image=self.blurry.get_imagetk(offset))
 
-            # Set the label to fill the window
-            label.grid(row=row, column=col)
+                # Set the label to fill the window
+                label.grid(row=row, column=col)
 
-            # Set background and highlight to black
-            label.configure(background="black", highlightbackground="black", highlightthickness=2)
+                # Set background and highlight to black
+                label.configure(background="black", highlightbackground="black", highlightthickness=2)
+
+                # Label <=> offset tracking
+                label.offset = offset
+                self.labels.append(label)
+            else:
+                # Update label to display new image
+                self.labels[i].configure(image=self.blurry.get_imagetk(offset))
+
+                # Label <=> offset tracking
+                self.labels[i].offset = offset
 
             # Add ratings text
             file = self.blurry.files[offset]
@@ -345,23 +363,25 @@ class Gui:
             if numsim > 0:
                 text += f"{numsim}s\n"
             if len(text) != 0:
-                textlabel = tk.Label(self.root, text=text.rstrip(), font=("Fixedsys", 10), bg="black", fg="white")
-                textlabel.grid(row=row, column=col, sticky="nw", pady=2)
+                if len(self.textlabels) <= i:
+                    textlabel = tk.Label(self.root, text=text.rstrip(), font=("Fixedsys", 10), bg="black", fg="white")
+                    textlabel.grid(row=row, column=col, sticky="nw", pady=2)
 
-            # Label <=> offset tracking
-            label.offset = offset
-            self.labels[offset] = label
+                    self.textlabels.append(textlabel)
+                else:
+                    self.textlabels[i].configure(text=text.rstrip())
 
             col += 1
             if col == self.blurry.cols:
                 row += 1
                 col = 0
 
-        # Fill space in active grids, reset others
-        for row in range(MAXROWS):
-            self.root.rowconfigure(row, weight = 1 if row < self.blurry.rows else 0)
-        for col in range(MAXCOLS):
-            self.root.columnconfigure(col, weight = 1 if col < self.blurry.cols else 0)
+        if is_layout_change:
+            # Fill space in active grids, reset others
+            for row in range(MAXROWS):
+                self.root.rowconfigure(row, weight = 1 if row < self.blurry.rows else 0)
+            for col in range(MAXCOLS):
+                self.root.columnconfigure(col, weight = 1 if col < self.blurry.cols else 0)
 
         # Select image
         if self.blurry.cursor not in range(len(self.blurry.offsets)):
@@ -393,7 +413,8 @@ class Gui:
             widget.destroy()
 
         # Clear all labels
-        self.labels = {}
+        self.labels = []
+        self.textlabels = []
 
     def choose_dir(self):
         "Open a directory selection dialog"

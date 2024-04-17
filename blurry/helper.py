@@ -3,11 +3,12 @@
 # Standard imports
 import concurrent.futures
 import logging
+import os
 import sys
 import threading
 import time
 
-MAXWORKERS = 8
+MAXWORKERS = os.cpu_count()
 
 #logging.basicConfig(level=logging.DEBUG)
 

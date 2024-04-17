@@ -957,6 +957,7 @@ class Blurry:
 
     # Image processing
 
+    @helper.timeit
     def scale_image(self, img_pil, offset):
         "Scale image to fit to screen"
 
@@ -1052,6 +1053,7 @@ class Blurry:
         # Scale to fit screen
         return self.scale_image(img_pil, offset)
 
+    @helper.timeit
     def load_prevnext(self):
         "Load previous and next page worth of images for performance"
         new_offsets = []
@@ -1083,6 +1085,7 @@ class Blurry:
         # Delete after
         self.gui.after.pop(0)
 
+    @helper.timeit
     def load_new(self):
         "Load all new images in view"
 
@@ -1112,6 +1115,7 @@ class Blurry:
             del self.cache[TK][key]
             count -= 1
 
+    @helper.timeit
     def make_imagetk(self, img_pil):
         "Convert PIL image to ImageTk"
         img_tk = ImageTk.PhotoImage(img_pil)
