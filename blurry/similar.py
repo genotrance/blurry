@@ -130,7 +130,8 @@ class Similar:
                 self.image.img_cache[file][SIMILAR] = {}
         # Compare every file with files after it in parallel
         helper.parallelize((self.compare_similar, self.image.files),
-                           final=self.image.blurry.gui.update_progress)
+                           final=self.image.blurry.gui.update_progress,
+                           executor = self.image.blurry.executor)
 
         for file in self.image.img_cache:
             # Sort results by rating

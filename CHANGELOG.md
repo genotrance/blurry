@@ -16,18 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove missing files from image cache on initial load
 - Propagate blur/unblur to parent and child windows
 - Add brightness detection and display comparison on GUI
+- Add diskcache for resized images to speed up GUI
+- Add background thread and queue to handle image caching for previous/next images
 
 ### Changed
 
 - Normalize user provided paths into absolute paths
 - Limit similarity comparisons to images taken within 2 minutes, reduced from 5 minutes
 - Store image cache in the source directory as blurry.db - no longer one monolithic file in the home directory
-- Cache similarity metadata $TEMP/blurry to save time when rescanning an image directory
 - Clean up GUI display of image characteristics
 - Save cache after loading image characteristics but before comparing for similarties
 - Move similarity metadata from image cache to separate similarity cache since it is not saved to disk
 - Improved layout to not redraw the entire window when updating images
 - Set maximum parallel workers to number of CPU cores
+- Reuse single ThreadPoolExecutor for most tasks to reduce overhead of recreating threads
+- Switch to diskcache to store similarity metadata
+- Remove mmap cache of open image files to avoid parallel thread access issues
 
 ### Fixed
 

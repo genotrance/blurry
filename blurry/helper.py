@@ -96,7 +96,7 @@ def debugclass(cls):
     return cls
 
 @debug
-def parallelize(funcparam, post = None, results = None, final = None):
+def parallelize(funcparam, post = None, results = None, final = None, executor = None):
     """
     Parallel execution in threads - two cases
     - Run function on multiple params in parallel
@@ -121,24 +121,32 @@ def parallelize(funcparam, post = None, results = None, final = None):
     else:
         param = funcparam[1]
 
-    numworkers = len(funcs) if funcs is not None else min(len(params), MAXWORKERS)
-    with concurrent.futures.ThreadPoolExecutor(max_workers = numworkers) as executor:
-        if func is not None and params:
-            future_to_var = {executor.submit(func, param): param for param in params}
-        elif param is not None and funcs:
-            future_to_var = {executor.submit(func, param): func for func in funcs}
+    if executor is None:
+        numworkers = len(funcs) if funcs is not None else min(len(params), MAXWORKERS)
+        local_executor = concurrent.futures.ThreadPoolExecutor(max_workers = numworkers)
+    else:
+        local_executor = executor
 
-        for future in concurrent.futures.as_completed(future_to_var):
-            # Get var for this future
-            var = future_to_var[future]
+    if func is not None and params:
+        future_to_var = {local_executor.submit(func, param): param for param in params}
+    elif param is not None and funcs:
+        future_to_var = {local_executor.submit(func, param): func for func in funcs}
 
-            # Get result for this var
-            val = post(future.result()) if post is not None else future.result()
+    for future in concurrent.futures.as_completed(future_to_var):
+        # Get var for this future
+        var = future_to_var[future]
 
-            # Save results if specified
-            if results is not None:
-                results[var] = val
+        # Get result for this var
+        val = post(future.result()) if post is not None else future.result()
 
-            # Call final if specified
-            if final is not None:
-                final(var)
+        # Save results if specified
+        if results is not None:
+            results[var] = val
+
+        # Call final if specified
+        if final is not None:
+            final(var)
+
+    if executor is None:
+        # Clean up the executor
+        local_executor.shutdown()

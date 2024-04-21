@@ -2,13 +2,18 @@
 
 # Standard library imports
 import collections
+import concurrent.futures
 import copy
 import multiprocessing
 import os
+import queue
 import sys
+import tempfile
+import threading
 
 # 3rd party imports
 from PIL import ImageTk
+import diskcache
 
 # Package imports
 import blurry
@@ -37,6 +42,9 @@ class Blurry:
     parent = None
     image = None
     gui = None
+    queue = None
+    executor = None
+    worker = None
 
     zoom = 1.0
     zoomp = 1.0
@@ -90,6 +98,17 @@ class Blurry:
         # Initialize application
         self.init(filepaths)
 
+    def cleanup(self):
+        "Cleanup all resources - stop all background threads, close cache"
+        if self.executor is not None:
+            self.executor.shutdown()
+
+        if self.worker is not None:
+            self.queue.put([-1])
+            self.worker.join()
+
+        self.cache[image.DC].close()
+
     def parse_args(self, args):
         """
         Parse command line arguments and return filepaths
@@ -107,6 +126,9 @@ class Blurry:
     def init(self, filepaths):
         "Initialize application - used at startup and when dir is changed"
         self.cache = {
+            # Cache directory for blurry generated assets - $TEMP/blurry
+            image.DC: diskcache.FanoutCache(os.path.join(tempfile.gettempdir(), "blurry"),
+                                            eviction_policy="least-recently-used"),
             TK: {},
             ZOOM: {},
         }
@@ -119,6 +141,9 @@ class Blurry:
         # Load all files
         self.find_files(filepaths)
 
+        # Setup ThreadPoolExecutors
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers = os.cpu_count())
+
         if self.parent is not None and self.dir == self.parent.dir:
             # Reuse parent image functions
             self.image = self.parent.image
@@ -128,6 +153,11 @@ class Blurry:
 
         # Group similar images
         self.group_images()
+
+        # Start background worker
+        self.queue = queue.Queue()
+        self.worker = threading.Thread(target=self.cache_images)
+        self.worker.start()
 
         # Setup and show main window
         self.gui.show_window()
@@ -747,6 +777,8 @@ class Blurry:
             # Save cache on exit
             self.image.save_cache()
 
+        self.cleanup()
+
         self.gui.quit()
 
     def do_reload(self, _):
@@ -1044,14 +1076,38 @@ class Blurry:
 
         return img_resized
 
+    def get_cache_key(self, file):
+        hash = self.image.img_cache[file][image.HASH]
+        key = f"{hash}-{self.view_width}x{self.view_height}"
+        if self.is_blackwhite:
+            key += "-bw"
+        if image.BLURRED in self.image.img_cache[file]:
+            key += "-blurred"
+        if self.is_facehighlight and image.FACE in self.image.img_cache[file]:
+            key += "-faces"
+        return key
+
     def load_image(self, offset):
         "Load image scaled to fit to screen"
+
+        file = self.files[offset]
+        key = self.get_cache_key(file)
+        if self.zoom == 1.0 and key in self.cache[image.DC]:
+            return self.cache[image.DC][key]
 
         # Load image for this offset
         img_pil = self.image.read_image(self.files[offset])
 
         # Scale to fit screen
-        return self.scale_image(img_pil, offset)
+        img_pil = self.scale_image(img_pil, offset)
+
+        # Update image based on settings
+        img_pil = self.image.update_image(file, img_pil)
+
+        if self.zoom == 1.0:
+            self.cache[image.DC][key] = img_pil
+
+        return img_pil
 
     @helper.timeit
     def load_prevnext(self):
@@ -1076,11 +1132,7 @@ class Blurry:
 
         # Load images in parallel
         if len(new_offsets) > 0:
-            helper.parallelize((self.load_image, new_offsets),
-                               post=self.make_imagetk, results=self.cache[TK])
-
-        # Remove old images from cache
-        self.remove_old()
+            self.queue.put(new_offsets)
 
         # Delete after
         self.gui.after.pop(0)
@@ -1101,7 +1153,8 @@ class Blurry:
         # Load new images in parallel
         if len(new_offsets) > 0:
             helper.parallelize((self.load_image, new_offsets),
-                               post=self.make_imagetk, results=self.cache[TK])
+                               post=self.make_imagetk, results=self.cache[TK],
+                               executor = self.executor)
 
     def remove_old(self):
         "Remove older images from cache"
@@ -1115,11 +1168,26 @@ class Blurry:
             del self.cache[TK][key]
             count -= 1
 
+    def cache_images(self):
+        "Load and cache images in the background"
+        while True:
+            # Wait for new offsets to load
+            new_offsets = self.queue.get()
+            if -1 in new_offsets:
+                # Terminate
+                break
+
+            if len(new_offsets) > 0:
+                helper.parallelize((self.load_image, new_offsets),
+                                   executor = self.executor)
+
+            # Remove old images from cache
+            self.remove_old()
+
     @helper.timeit
     def make_imagetk(self, img_pil):
         "Convert PIL image to ImageTk"
         img_tk = ImageTk.PhotoImage(img_pil)
-        img_pil.close()
         return img_tk
 
     def get_imagetk(self, offset):

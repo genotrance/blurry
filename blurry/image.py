@@ -6,7 +6,6 @@ import functools
 import hashlib
 import json
 import lzma
-import mmap
 import os.path
 import shutil
 import tempfile
@@ -29,6 +28,7 @@ BLUR = "blur"
 BLURRED = "blurred"
 BRIGHTNESS = "brightness"
 CONTRAST = "contrast"
+DC = "diskcache"
 EXIF = "exif"
 FACE = "faces"
 HASH = "hash"
@@ -39,9 +39,7 @@ TIME = "mtime"
 class BlurryImage:
     "Main class to handle all image processing"
     blurrydb = None
-    cachedir = None
     img_cache = None
-    mmap_cache = None
 
     blurry = None
     sim = None
@@ -70,8 +68,6 @@ class BlurryImage:
         self.read_images()
 
     def __del__(self):
-        self.mmap_cache = {}
-
         for directory in self.tempdirs.values():
             # Delete any temp directories
             shutil.rmtree(directory, ignore_errors=True)
@@ -80,13 +76,7 @@ class BlurryImage:
 
     def init_cache(self):
         "Load image cache from disk for this directory if present"
-        self.mmap_cache = {}
         self.img_cache = {}
-
-        # Cache directory for blurry generated assets - $TEMP/blurry
-        self.cachedir = os.path.join(tempfile.gettempdir(), "blurry")
-        if not os.path.exists(self.cachedir):
-            os.makedirs(self.cachedir)
 
         self.blurrydb = os.path.join(self.dir, "blurry.db")
         if os.path.exists(self.blurrydb):
@@ -134,6 +124,8 @@ class BlurryImage:
             if flag == "all":
                 self.img_cache = {}
                 cleared = True
+            elif flag == DC:
+                self.blurry.cache[DC].clear()
             elif flag in [BLUR, BRIGHTNESS, CONTRAST, EXIF, FACE, sim.SIMILAR]:
                 cleared = True
                 for file in self.img_cache:
@@ -267,19 +259,11 @@ class BlurryImage:
                 break
 
     @helper.timeit
-    def read_file(self, file):
-        "Load image file from disk"
-
-        # Already loaded
-        if file in self.mmap_cache:
-            return
+    def read_file_info(self, file):
+        "Load image file info from disk"
 
         # Get path to current file
         filepath = os.path.join(self.dir, file)
-
-        # mmap file for fast access and OS caching
-        with open(filepath, "rb") as fobj:
-            self.mmap_cache[file] = mmap.mmap(fobj.fileno(), length = 0, access = mmap.ACCESS_READ)
 
         # File modification time
         mtime = os.path.getmtime(filepath)
@@ -295,6 +279,8 @@ class BlurryImage:
         elif self.img_cache[file][SIZE] != size:
             # File has changed - reinit
             self.img_cache[file] = {TIME: mtime, SIZE: size}
+
+        return filepath
 
     @helper.timeit
     def read_images(self):
@@ -323,7 +309,8 @@ class BlurryImage:
 
             # Load all files to get info
             helper.parallelize((self.read_image, self.files),
-                               final=self.blurry.gui.update_progress)
+                               final=self.blurry.gui.update_progress,
+                               executor = self.blurry.executor)
             self.is_sim_rescan = False
 
             # Find similar
@@ -348,28 +335,15 @@ class BlurryImage:
         "Read image from disk and get info"
 
         # Load image file if not already
-        self.read_file(file)
+        filepath = self.read_file_info(file)
 
         # Open as PIL image
-        img_pil = Image.open(self.mmap_cache[file])
+        with open(filepath, "rb") as fobj:
+            img_pil = Image.open(fobj)
+            img_pil.load()
 
         # Get info for the image
         img_pil = self.get_info(file, img_pil)
-
-        # Draw red boxes around faces
-        if self.blurry.is_facehighlight:
-            if FACE in self.img_cache[file]:
-                for (ltx, lty, rbx, rby) in self.img_cache[file][FACE]:
-                    draw = ImageDraw.Draw(img_pil)
-                    draw.rectangle([ltx, lty, rbx, rby], outline="red", width=4)
-
-        # Set to B&W if needed
-        if self.blurry.is_blackwhite:
-            img_pil = self.blackwhite(img_pil)
-
-        # Blur image if needed
-        if BLURRED in self.img_cache[file]:
-            img_pil = self.blurimage(img_pil)
 
         return img_pil
 
@@ -405,10 +379,10 @@ class BlurryImage:
             ops.append(self.faces)
 
         if self.is_sim_rescan:
-            simcache = os.path.join(self.cachedir, f"{self.img_cache[file][HASH]}_{sim.SIMDEFAULT}.npz")
-            if os.path.exists(simcache):
-                # Load similarity metadata from temp cache
-                self.sim.sim_cache[file] = numpy.load(simcache, allow_pickle=True)["arr_0"]
+            key = f"{self.img_cache[file][HASH]}_{sim.SIMDEFAULT}"
+            if key in self.blurry.cache[DC]:
+                # Load similarity metadata from cache
+                self.sim.sim_cache[file] = self.blurry.cache[DC][key]
             else:
                 # Regenerate similarity metadata
                 ops.append(self.sim.simop)
@@ -445,8 +419,8 @@ class BlurryImage:
             if self.sim.simop in results:
                 # Load into image cache
                 self.sim.sim_cache[file] = results[self.sim.simop]
-                # Save similarity metadata to temp cache
-                numpy.savez_compressed(simcache, self.sim.sim_cache[file])
+                # Save similarity metadata to disk cache
+                self.blurry.cache[DC][key] = self.sim.sim_cache[file]
 
         return img_pil
 
@@ -488,8 +462,9 @@ class BlurryImage:
         if file in self.tempdirs:
             return self.tempdirs[file]
 
-        if len(self.img_cache[file][FACE]) != 0:
-            directory = tempfile.mkdtemp(prefix=f"blurry-{file}-")
+        faces = self.get_faces(file)
+        if len(faces) != 0:
+            directory = tempfile.mkdtemp(prefix=f"blurry-{file}-faces")
             img_pil = self.read_image(file)
             for i, face in enumerate(self.img_cache[file][FACE]):
                 cimg = img_pil.crop(tuple(face))
@@ -498,6 +473,26 @@ class BlurryImage:
             self.tempdirs[file] = directory
             return directory
         return None
+
+    def update_image(self, file, img_pil):
+        "Update image with face info and user settings"
+
+        # Draw red boxes around faces
+        if self.blurry.is_facehighlight:
+            if FACE in self.img_cache[file]:
+                for (ltx, lty, rbx, rby) in self.img_cache[file][FACE]:
+                    draw = ImageDraw.Draw(img_pil)
+                    draw.rectangle([ltx, lty, rbx, rby], outline="red", width=4)
+
+        # Set to B&W if needed
+        if self.blurry.is_blackwhite:
+            img_pil = self.blackwhite(img_pil)
+
+        # Blur image if needed
+        if BLURRED in self.img_cache[file]:
+            img_pil = self.blurimage(img_pil)
+
+        return img_pil
 
     @functools.lru_cache
     def get_similar(self, file):
