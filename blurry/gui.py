@@ -362,14 +362,14 @@ class Gui:
             numsim = len(self.blurry.image.get_similar(file))
             if numsim > 0:
                 text += f"{numsim}s\n"
-            if len(text) != 0:
-                if len(self.textlabels) <= i:
-                    textlabel = tk.Label(self.root, text=text.rstrip(), font=("Fixedsys", 10), bg="black", fg="white")
-                    textlabel.grid(row=row, column=col, sticky="nw", pady=2)
 
-                    self.textlabels.append(textlabel)
-                else:
-                    self.textlabels[i].configure(text=text.rstrip())
+            if len(self.textlabels) <= i:
+                textlabel = tk.Label(self.root, text=text.rstrip(), font=("Fixedsys", 10), bg="black", fg="white")
+                textlabel.grid(row=row, column=col, sticky="nw", pady=2)
+
+                self.textlabels.append(textlabel)
+            else:
+                self.textlabels[i].configure(text=text.rstrip())
 
             col += 1
             if col == self.blurry.cols:

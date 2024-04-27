@@ -22,7 +22,7 @@ from . import helper
 from . import image
 
 # Constants
-PAGECACHE = 5           # Maximum number of pages to cache
+PAGECACHE = 8           # Maximum number of pages to cache
 PAGESIZE = 8            # Default number of files to load per page
 ZOOMD = 0.5             # Increase or decrease zoom by this delta
 
@@ -1077,6 +1077,9 @@ class Blurry:
         return img_resized
 
     def get_cache_key(self, file):
+        if (file not in self.image.img_cache or
+            image.HASH not in self.image.img_cache[file]):
+            return None
         hash = self.image.img_cache[file][image.HASH]
         key = f"{hash}-{self.view_width}x{self.view_height}"
         if self.is_blackwhite:
@@ -1092,7 +1095,7 @@ class Blurry:
 
         file = self.files[offset]
         key = self.get_cache_key(file)
-        if self.zoom == 1.0 and key in self.cache[image.DC]:
+        if self.zoom == 1.0 and key is not None and key in self.cache[image.DC]:
             return self.cache[image.DC][key]
 
         # Load image for this offset
@@ -1104,7 +1107,7 @@ class Blurry:
         # Update image based on settings
         img_pil = self.image.update_image(file, img_pil)
 
-        if self.zoom == 1.0:
+        if self.zoom == 1.0 and key is not None:
             self.cache[image.DC][key] = img_pil
 
         return img_pil
@@ -1123,7 +1126,7 @@ class Blurry:
 
         # Identify next page of images
         last = self.offsets[-1]
-        for offset in range(last+1, min(last + len(self.offsets) + 1, len(self.files))):
+        for offset in range(last+1, min(last + 2 * len(self.offsets) + 1, len(self.files))):
             if offset not in self.cache[TK] and offset not in self.offsets:
                 new_offsets.append(offset)
             else:

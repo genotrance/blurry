@@ -12,7 +12,6 @@ import tempfile
 
 # 3rd party imports
 import cv2
-import dlib
 import numpy
 
 from PIL import Image, ImageDraw, ImageFilter, ExifTags, TiffImagePlugin
@@ -49,7 +48,11 @@ class BlurryImage:
     tempdirs = None
     is_temp = False
 
-    is_sim_rescan = False
+    is_rescan = False
+
+    face_model_file = None
+    face_config_file = None
+
 
     def __init__(self, blurry, directory, files):
         self.blurry = blurry
@@ -63,6 +66,11 @@ class BlurryImage:
                 self.is_temp = True
 
         self.sim = sim.Similar(self)
+
+        # Setup cv2 face detection
+        path = os.path.dirname(__file__)
+        self.face_model_file = os.path.join(path, "models", "opencv_face_detector_uint8.pb")
+        self.face_config_file = os.path.join(path, "models", "opencv_face_detector.pbtxt")
 
         self.init_cache()
         self.read_images()
@@ -92,8 +100,11 @@ class BlurryImage:
     def save_cache(self):
         "Save directory cache in memory to disk"
         self.img_cache[TIME] = os.path.getmtime(self.dir)
-        with lzma.open(self.blurrydb, "wt") as cdb:
-            json.dump(self.img_cache, cdb)
+        try:
+            with lzma.open(self.blurrydb, "wt") as cdb:
+                json.dump(self.img_cache, cdb)
+        except PermissionError:
+            pass
         del self.img_cache[TIME]
 
     def clean_cache(self):
@@ -121,12 +132,14 @@ class BlurryImage:
             else:
                 continue
 
-            if flag == "all":
+            if flag in ["all", "db"]:
                 self.img_cache = {}
                 cleared = True
-            elif flag == DC:
+
+            if flag in ["all", DC]:
                 self.blurry.cache[DC].clear()
-            elif flag in [BLUR, BRIGHTNESS, CONTRAST, EXIF, FACE, sim.SIMILAR]:
+
+            if flag in [BLUR, BRIGHTNESS, CONTRAST, EXIF, FACE, sim.SIMILAR]:
                 cleared = True
                 for file in self.img_cache:
                     if flag in self.img_cache[file]:
@@ -178,12 +191,24 @@ class BlurryImage:
     # Image info
 
     @helper.timeit
-    def faces(self, gray):
-        "Detect faces in the image"
-        dets = dlib.get_frontal_face_detector()(gray, 1)
+    def faces(self, image):
+        "Detect faces using OpenCV DNN"
+        net = cv2.dnn.readNetFromTensorflow(self.face_model_file, self.face_config_file)
+
+        # Create blob from the image
+        (h, w) = image.shape[:2]
+        blob = cv2.dnn.blobFromImage(image, 1.0, (300, 300), [104, 117, 123], False, False)
+
+        # Detect faces
+        net.setInput(blob)
+        detections = net.forward()
         faces = []
-        for face in dets:
-            faces.append([face.left(), face.top(), face.right(), face.bottom()])
+        for i in range(0, detections.shape[2]):
+            confidence = detections[0, 0, i, 2]
+            if confidence > 0.5:
+                box = detections[0, 0, i, 3:7] * numpy.array([w, h, w, h])
+                faces.append([int(val) for val in box])
+
         return faces
 
     @helper.timeit
@@ -252,11 +277,12 @@ class BlurryImage:
 
     def check_sim_rescan(self):
         "Check if similarity rescan is required - new files added or similarity missing in cache"
-        self.is_sim_rescan = False
+        is_sim_rescan = False
         for file in self.files:
             if file not in self.img_cache or sim.SIMILAR not in self.img_cache[file]:
-                self.is_sim_rescan = True
+                is_sim_rescan = True
                 break
+        return is_sim_rescan
 
     @helper.timeit
     def read_file_info(self, file):
@@ -286,6 +312,10 @@ class BlurryImage:
     def read_images(self):
         "Read every image from disk and generate info"
 
+        # Skip for temp directories
+        if self.is_temp:
+            return
+
         # Remove dir time since img_cache is dict of files
         if TIME in self.img_cache:
             dtime = self.img_cache[TIME]
@@ -293,25 +323,28 @@ class BlurryImage:
         else:
             dtime = 0
 
-        if self.is_temp:
-            return
+        # Clear cache if requested
+        is_clear_cache = self.clear_cache()
 
         # Check if rescan of files is required
-        self.check_sim_rescan()
+        is_sim_rescan = self.check_sim_rescan()
 
-        if self.clear_cache() or dtime < os.path.getmtime(self.dir) or self.is_sim_rescan:
-            # Some cache elements cleared
+        self.is_rescan = dtime < os.path.getmtime(self.dir) or is_clear_cache or is_sim_rescan
+
+        if self.is_rescan:
             # Directory changed - files added/removed/renamed
+            # Some cache elements cleared
             # Similarity rescan required
 
             # Initialize progress bar - get info + find similar
             self.blurry.gui.setup_progress(len(self.files) * 2)
 
             # Load all files to get info
+            self.is_rescan = True
             helper.parallelize((self.read_image, self.files),
                                final=self.blurry.gui.update_progress,
                                executor = self.blurry.executor)
-            self.is_sim_rescan = False
+            self.is_rescan = False
 
             # Find similar
             self.save_cache()
@@ -368,17 +401,15 @@ class BlurryImage:
         # Reorient if required
         img_pil = self.reorient(file, img_pil)
 
-        ops = []
-        if BLUR not in self.img_cache[file]:
-            ops.extend([self.sobel, self.laplacian, self.mean_spectrum])
-        if BRIGHTNESS not in self.img_cache[file]:
-            ops.append(self.brightness)
-        if CONTRAST not in self.img_cache[file]:
-            ops.append(self.contrast)
-        if FACE not in self.img_cache[file]:
-            ops.append(self.faces)
+        # Done for temp directories
+        if self.is_temp:
+            return img_pil
 
-        if self.is_sim_rescan:
+        if self.is_rescan:
+            ops = []
+            if FACE not in self.img_cache[file]:
+                ops.append(self.faces)
+
             key = f"{self.img_cache[file][HASH]}_{sim.SIMDEFAULT}"
             if key in self.blurry.cache[DC]:
                 # Load similarity metadata from cache
@@ -387,29 +418,13 @@ class BlurryImage:
                 # Regenerate similarity metadata
                 ops.append(self.sim.simop)
 
-        if not self.is_temp and len(ops) != 0:
-            # Convert into opencv format
-            image = cv2.cvtColor(numpy.array(img_pil), cv2.COLOR_RGB2BGR)
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            if len(ops) != 0:
+                # Convert into opencv format
+                image = cv2.cvtColor(numpy.array(img_pil), cv2.COLOR_RGB2BGR)
 
-            # Get all image info
-            results = {}
-            helper.parallelize((ops, gray), results=results)
-
-            # Get blurriness
-            if BLUR not in self.img_cache[file]:
-                sobel = results[self.sobel]
-                laplacian = results[self.laplacian]
-                mean_spectrum = results[self.mean_spectrum]
-                self.img_cache[file][BLUR] = round(sobel * laplacian * mean_spectrum / 1000, 2)
-
-            # Get brightness
-            if BRIGHTNESS not in self.img_cache[file]:
-                self.img_cache[file][BRIGHTNESS] = round(results[self.brightness], 2)
-
-            # Get contrast
-            if CONTRAST not in self.img_cache[file]:
-                self.img_cache[file][CONTRAST] = round(results[self.contrast], 2)
+                # Get all image info
+                results = {}
+                helper.parallelize((ops, image), results=results)
 
             # Get faces
             if FACE not in self.img_cache[file]:
@@ -421,7 +436,6 @@ class BlurryImage:
                 self.sim.sim_cache[file] = results[self.sim.simop]
                 # Save similarity metadata to disk cache
                 self.blurry.cache[DC][key] = self.sim.sim_cache[file]
-
         return img_pil
 
     def blur_image(self, file):
@@ -464,11 +478,13 @@ class BlurryImage:
 
         faces = self.get_faces(file)
         if len(faces) != 0:
-            directory = tempfile.mkdtemp(prefix=f"blurry-{file}-faces")
+            hash = self.img_cache[file][HASH]
+            directory = tempfile.mkdtemp(prefix=f"blurry-{hash}-faces-")
             img_pil = self.read_image(file)
+            _, ext = os.path.splitext(file)
             for i, face in enumerate(self.img_cache[file][FACE]):
                 cimg = img_pil.crop(tuple(face))
-                cimg.save(os.path.join(directory, f"{file[:-4]}-{i:04}.jpg"))
+                cimg.save(os.path.join(directory, f"{hash}-{i:04}.{ext}"))
 
             self.tempdirs[file] = directory
             return directory
@@ -494,7 +510,6 @@ class BlurryImage:
 
         return img_pil
 
-    @functools.lru_cache
     def get_similar(self, file):
         "Return all images similar to the specified file"
         return self.sim.get_similar(file)

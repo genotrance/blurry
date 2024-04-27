@@ -195,8 +195,9 @@ class Similar:
     def get_similar(self, file, visited=None):
         "Return all images similar to the specified file - recursively"
 
-        # No similar files
-        if SIMILAR not in self.image.img_cache[file]:
+        # No similar info
+        if (file not in self.image.img_cache or
+            SIMILAR not in self.image.img_cache[file]):
             return []
 
         if visited is None:

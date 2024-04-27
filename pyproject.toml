@@ -17,7 +17,6 @@ classifiers = [
 ]
 dependencies = [
     "diskcache",
-    "dlib-bin",
     "numpy",
     "opencv-python",
     "pillow",
